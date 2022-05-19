@@ -1,7 +1,9 @@
+#include <iostream>
 #include <GL/glut.h>
-#include <stdio.h>
+
 #define GRAVEDAD -9.8
 #define MASA 200 // masa de la pelota
+using namespace std;
 
 struct pelota{
 	double posicion[3];
