@@ -3,17 +3,21 @@
 
 #include <math.h>
 #define size 50
+#define mayaX 20
+#define mayaY 20
 #define GRAVEDAD -9.8
-#define MASA 200
+#define MASA 2000
 int sizeN = size*-1;
 using namespace std;
 
 void ajusta(int, int);
-void circulo(float, float, int);
 void teclado(unsigned char, int, int);
-void inicializaP(struct points *p, int, int);
+void circulo(float, float, int);
+void inicializaP(struct point *p, int, int);
+void dibujaPuntos();
+void dibujaMaya();
 
-struct points{
+struct point{
 	double pos[2];
 	double vel[2];
 	double last[2]; //Used in Inertia
@@ -24,11 +28,11 @@ double h= 0.025; // h incrementos de tiempo
 GLboolean bx=GL_FALSE;
 GLboolean by=GL_FALSE;
 
-struct points point;
+struct point points[mayaX][mayaY];
 GLubyte paleta[7][3]={{0,0,255},{0,255,255},{255,0,255},{0,255,0},{255,0,0},{50,40,80},{0,100,100}};
 
 //Fuerzas==========================================
-void integraVerlet(struct points *p){
+void integraVerlet(struct point *p){
 	//Inertia
 	double accX =0,accY=0;
 	p->vel[0] = p->pos[0] - p->last[0];
@@ -47,7 +51,7 @@ void integraVerlet(struct points *p){
 	p->pos[1] = nextY;
 }
 
-void integraEuler(struct points *p){
+void integraEuler(struct point *p){
 	// v(t+h)=v(t)+F(t)/m*h
 	if (bx) p->vel[0] += p->fX*h;
 	if (by) p->vel[1] += GRAVEDAD/MASA*h;
@@ -55,8 +59,7 @@ void integraEuler(struct points *p){
 	p->pos[0] += p->vel[0]*h;
 	p->pos[1] += p->vel[1]*h;
 }
-
-void constraints(struct points *p){
+void constraints(struct point *p){
 	//colisiones
 	if(p->pos[0]>=size || p->pos[0]<=sizeN){ //X
 		p->fX=-1*p->fX;
@@ -72,29 +75,29 @@ void constraints(struct points *p){
 		p->pos[1]=size;
 	}
 	if(p->pos[1]<=sizeN){ //Y Abajo
-		p->vel[1]= 2;
-		p->pos[1]= sizeN+2;
+		p->vel[1]= 1;
+		p->pos[1]= sizeN;
 	}
 }
-
+//DIBUJA y ANIMA=========================================
 void dibuja(void){
 	glClear(GL_COLOR_BUFFER_BIT);
 	
-    glPointSize(5);
+    glPointSize(2);
     glColor3ubv(paleta[0]);
-    glBegin(GL_POINTS);
-    	int i;
-		for(i=0;i<1;i++){
-			glVertex2f(point.pos[0],point.pos[1]);
-		}
-    glEnd();
+    dibujaMaya();
     
     glutSwapBuffers();
 }
 void anima(void){
 //	integraEuler();
-	integraVerlet(&point);
-	constraints(&point);
+	int i,j;
+	for(i=0;i<mayaX;i++){
+		for(j=0;j<mayaY;j++){
+			integraVerlet(&points[i][j]);
+			constraints(&points[i][j]);	
+		}
+	}
 
 	glutPostRedisplay();
 }
@@ -110,7 +113,12 @@ int main(int argc, char** argv){
 	glutKeyboardFunc(teclado);
 	glutIdleFunc(anima);
 	
-	inicializaP(&point, 0, 0);
+	int i,j,ix,jx;
+	for(i=0,ix=mayaX;i<mayaX;i++,ix-=2){
+		for(j=0,jx=mayaY;j<mayaY;j++,jx-=2){
+			inicializaP(&points[i][j], ix, jx);
+		}
+	}
 	
 	glutMainLoop();
 	return 0;
@@ -139,8 +147,37 @@ void circulo(float x, float y, int seg){
          glVertex2f(x+radio*cos(i*M_PI/180),y+radio*sin(i*M_PI/180));
    glEnd();
 }
+void dibujaPuntos(){
+    glBegin(GL_POINTS);
+    	int i,j;
+		for(i=0;i<mayaX;i++){
+			for(j=0;j<mayaY;j++){
+				glVertex2f(points[i][j].pos[0],points[i][j].pos[1]);
+			}
+		}
+    glEnd();
+}
+void dibujaMaya(){    
+    int i,j;
+	for(i=0;i<mayaX;i++){
+		glBegin(GL_LINE_STRIP);
+		for(j=0;j<mayaY;j++){
+			glVertex2f(points[i][j].pos[0],points[i][j].pos[1]);
+		}
+		glEnd();
+	}
+	
+	for(i=0;i<mayaX;i++){
+		glBegin(GL_LINE_STRIP);
+		for(j=0;j<mayaY;j++){
+			glVertex2f(points[j][i].pos[0],points[j][i].pos[1]);
+		}
+		glEnd();
+	}
+    
+}
 //Funciones Otras ====================================
-void inicializaP(struct points *p, int x, int y){
+void inicializaP(struct point *p, int x, int y){
 	p->pos[0]=x;
 	p->pos[1]=y;
 	p->last[0]=p->pos[0];
@@ -148,5 +185,7 @@ void inicializaP(struct points *p, int x, int y){
 	p->vel[0]=0;
 	p->vel[1]=0;
 	p->fX = 0.001;
+//	cout<<"x:"<<x<<endl;
+//	cout<<"y:"<<y<<endl;
 }
 
