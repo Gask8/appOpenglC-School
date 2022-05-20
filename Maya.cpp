@@ -1,14 +1,16 @@
 #include <iostream>
 #include <GL/glut.h>
-
 #include <math.h>
+//variables del programa general
 #define size 50
 #define mayaX 25
 #define mayaY 25
-#define GRAVEDAD -9.8
-#define MASA 200
+//variables de particulas
+#define GRAVEDAD -0.00001
+#define MASA 0.01
+//Variables de links
 #define RESTINGD 2
-#define STIFFNESS 1
+#define STIFFNESS 0.08
 #define CURTAINSEN 50
 const int sizeN = size*-1;
 const int numLin = mayaX*(mayaX-1)+mayaY*(mayaY-1);
@@ -16,19 +18,24 @@ using namespace std;
 
 void ajusta(int, int);
 void teclado(unsigned char, int, int);
-void circulo(float, float, int);
 void inicializaP(struct point *p, int, int, double);
 void inicializaL(struct link *l, struct point *p1, struct point *p2);
 void inicializador();
 void dibujaPuntos();
 void dibujaMaya();
 
+//STRUCTS
 struct point{
 	double pos[2];
 	double vel[2];
-	double last[2]; //Used in Inertia
+	double last[2];
+	double accX, accY;
 	double fX;
+	bool pinned;
+  	float pinX, pinY;
+	//Lista de links
 	struct link *lin[4];
+	bool blink[4];
 	int cont;
 };
 struct link{
@@ -43,7 +50,7 @@ struct link{
 
 double h= 0.025; // h incrementos de tiempo
 GLboolean bx=GL_FALSE;
-GLboolean by=GL_FALSE;
+GLboolean by=GL_TRUE;
 
 struct point points[mayaX][mayaY];
 struct link links[numLin];
@@ -55,20 +62,22 @@ void fuerzaCuerda(struct link *l){
     double d = sqrt(diffX * diffX + diffY * diffY);
     double difference = (l->restingDistance - d) / d;
     
-    if (d > l->tearSensitivity) l->roto=false;
-    	
-//    double im1 = 1 / MASA;
-//    double im2 = 1 / MASA;
-//    double scalarP1 = (im1 / (im1 + im2)) * STIFFNESS;
-//    double scalarP2 = STIFFNESS - scalarP1;
-    double translateX = diffX * 0.5 * difference;
-	double translateY = diffY * 0.5 * difference;
+	//Quitar linea de punto a travez de su arreglo
+    if (d > l->tearSensitivity){
+    	int i;
+    	for (i=0; i < l->p1->cont; i++) {
+			if(l->p1->lin[i]->id==l->id){
+				l->p1->blink[i]=false;
+			}
+		}
+	}
 
-//    l->p1->pos[0] += diffX * scalarP1 * difference;
-//    l->p1->pos[1] += diffY * scalarP1 * difference;
-//    l->p2->pos[0] -= diffX * scalarP2 * difference;
-//    l->p2->pos[1] -= diffY * scalarP2 * difference;
-
+    double im1 = 1 / MASA;
+    double im2 = 1 / MASA;
+    double scalarP1 = (im1 / (im1 + im2)) * STIFFNESS;
+    double scalarP2 = STIFFNESS - scalarP1;
+    double translateX = diffX * scalarP1 * difference;
+	double translateY = diffY * scalarP2 * difference;
 	l->p1->pos[0] += translateX;
     l->p1->pos[1] += translateY;
     l->p2->pos[0] -= translateX;
@@ -76,43 +85,41 @@ void fuerzaCuerda(struct link *l){
 }
 void integraVerlet(struct point *p){
 	//Inertia
-	double accX =0,accY=0;
+	
+	if (bx) p->accX=p->fX/MASA;
+	if (by) p->accY=GRAVEDAD/MASA;
 	p->vel[0] = p->pos[0] - p->last[0];
 	p->vel[1] = p->pos[1] - p->last[1];
-	if (bx) accX=p->fX;
-	if (by) accY=GRAVEDAD/MASA;
-	double nextX = p->pos[0] + p->vel[0] + accX * h;
-	double nextY = p->pos[1] + p->vel[1] + accY * h;
+	//dampen velocity
+	p->vel[0] *= 0.999;
+  	p->vel[1] *= 0.999;
+	double nextX = p->pos[0] + p->vel[0] + p->accX * h;
+	double nextY = p->pos[1] + p->vel[1] + p->accY * h;
 	p->last[0] = p->pos[0];
 	p->last[1] = p->pos[1];
 	p->pos[0] = nextX;
 	p->pos[1] = nextY;
-}
-
-void integraEuler(struct point *p){
-	// v(t+h)=v(t)+F(t)/m*h
-	if (bx) p->vel[0] += p->fX*h;
-	if (by) p->vel[1] += GRAVEDAD/MASA*h;
-	// x(t+h)=x(t) + v(t+h)*h
-	p->pos[0] += p->vel[0]*h;
-	p->pos[1] += p->vel[1]*h;
+	
+	p->accX = 0;
+	p->accY = 0;
 }
 void constraints(struct point *p){
 	//colisiones
+	//Revisar condiciones de cuerda
 	int i;
 	for (i=0; i < p->cont; i++) {
-		fuerzaCuerda(p->lin[i]);
+		if(p->blink[i]){
+			fuerzaCuerda(p->lin[i]);
+		}
 	}
-	
+	//Hacer que nada se salga del margen
 	if(p->pos[0]>=size || p->pos[0]<=sizeN){ //X
 		p->fX=-1*p->fX;
-//		point.velocidad[0]=0;
 		if(p->vel[0]<0 || p->vel[0]>0){
 			p->vel[0]*=-1;
 		}
 		p->pos[0]=(p->pos[0]>=size)?size:sizeN;
 	}
-	
 	if(p->pos[1]>=size){ //Y Arriba
 		p->vel[1]= 0;
 		p->pos[1]=size;
@@ -121,6 +128,12 @@ void constraints(struct point *p){
 		p->vel[1]= 1;
 		p->pos[1]= sizeN;
 	}
+	
+	//pinned no se mueven
+	if (p->pinned) {
+      p->pos[0] = p->pinX;
+      p->pos[1] = p->pinY; 
+    }
 }
 //DIBUJA y ANIMA=========================================
 void dibuja(void){
@@ -134,7 +147,6 @@ void dibuja(void){
     glutSwapBuffers();
 }
 void anima(void){
-//	integraEuler();
 	int i,j;
 	
 	for(i=0;i<mayaX;i++){
@@ -157,9 +169,8 @@ int main(int argc, char** argv){
 	glutReshapeFunc(ajusta);
 	glutKeyboardFunc(teclado);
 	glutIdleFunc(anima);
-
+	//Iniciar todas las variables
 	inicializador();
-		
 	glutMainLoop();
 	return 0;
 }
@@ -179,14 +190,6 @@ void teclado(unsigned char key, int x, int y) {
 	}
 }
 //Funciones para dibuja ===============================
-void circulo(float x, float y, int seg){
-   int i;
-   int radio=1;
-   glBegin(GL_POLYGON);
-     for(i=0; i<=360; i+=360/seg)
-         glVertex2f(x+radio*cos(i*M_PI/180),y+radio*sin(i*M_PI/180));
-   glEnd();
-}
 void dibujaPuntos(){
     glBegin(GL_POINTS);
     	int i,j;
@@ -208,7 +211,6 @@ void dibujaMaya(){
 		}
 	}
 	glEnd();
-    
 }
 //Funciones Inicializadoras ====================================
 void inicializaP(struct point *p, int x, int y,double f){
@@ -219,15 +221,24 @@ void inicializaP(struct point *p, int x, int y,double f){
 	p->vel[0]=0;
 	p->vel[1]=0;
 	p->fX =f;
+	p->accX=0;
+	p->accY=0;
 	p->cont=0;
+	p->pinned = false;
+	p->blink[0]=false;
+	p->blink[1]=false;
+	p->blink[2]=false;
+	p->blink[3]=false;
 }
 void inicializaL(struct link *l, struct point *p1a, struct point *p2a,int uid){
 	l->id=uid;
 	l->p1=p1a;
 	l->p1->lin[l->p1->cont]=l;
+	l->p1->blink[l->p1->cont]=true;
 	l->p1->cont++;
 	l->p2=p2a;
 	l->p2->lin[l->p2->cont]=l;
+	l->p2->blink[l->p2->cont]=true;
 	l->p2->cont++;
 	l->restingDistance=RESTINGD;
 	l->stiffness=STIFFNESS;
@@ -238,13 +249,19 @@ void inicializador(){
 	int i,j,ix,jx;
 	for(i=0,ix=mayaX;i<mayaX;i++,ix-=2){
 		for(j=0,jx=mayaY;j<mayaY;j++,jx-=2){
-			if(i==9){
+			if(j==mayaX-1){
 				inicializaP(&points[i][j], ix, jx,0.001);	
 			} else {
 				inicializaP(&points[i][j], ix, jx,0);
 			}
+			if(j==0){
+				points[i][j].pinned=true;
+				points[i][j].pinX=ix;
+				points[i][j].pinY=jx;
+			}
 		}
 	}
+	
 	int c=0;
 	for(i=0;i<mayaX;i++){
 		for(j=0;j<mayaY-1;j++){
@@ -258,17 +275,5 @@ void inicializador(){
 			c++;
 		}
 	}
-	
-	//Lector de Lineas en puntos
-//	int p=0;
-//	for(i=0;i<2;i++){
-//		for(j=0;j<mayaY;j++){
-//			cout<<"Punto "<<p<<endl;
-//			for (c=0; c<points[i][j].cont;c++){
-//				cout<<"Linea #"<<c<<" - Indice:"<<points[i][j].lin[c]->id<<endl;
-//			}
-//			p++;
-//		}
-//	}
 }
 
