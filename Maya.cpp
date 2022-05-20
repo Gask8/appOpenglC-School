@@ -11,7 +11,7 @@
 //Variables de links
 #define RESTINGD 2
 #define STIFFNESS 0.08
-#define CURTAINSEN 50
+#define CURTAINSEN 10
 const int sizeN = size*-1;
 const int numLin = mayaX*(mayaX-1)+mayaY*(mayaY-1);
 using namespace std;
@@ -31,11 +31,11 @@ struct point{
 	double last[2];
 	double accX, accY;
 	double fX;
-	bool pinned;
+	GLboolean pinned;
   	float pinX, pinY;
 	//Lista de links
 	struct link *lin[4];
-	bool blink[4];
+	GLboolean blink[4];
 	int cont;
 };
 struct link{
@@ -45,7 +45,7 @@ struct link{
 	float restingDistance;
   	float stiffness;
   	float tearSensitivity;
-  	bool roto;
+  	GLboolean roto;
 };
 
 double h= 0.025; // h incrementos de tiempo
@@ -67,9 +67,15 @@ void fuerzaCuerda(struct link *l){
     	int i;
     	for (i=0; i < l->p1->cont; i++) {
 			if(l->p1->lin[i]->id==l->id){
-				l->p1->blink[i]=false;
+				l->p1->blink[i]=GL_FALSE;
 			}
 		}
+		for (i=0; i < l->p2->cont; i++) {
+			if(l->p2->lin[i]->id==l->id){
+				l->p2->blink[i]=GL_FALSE;
+			}
+		}
+		l->roto=GL_FALSE;
 	}
 
     double im1 = 1 / MASA;
@@ -141,7 +147,7 @@ void dibuja(void){
 	
     glPointSize(2);
     glColor3ub(0,0,0);
-//    dibujaPuntos();
+    dibujaPuntos();
     dibujaMaya();
     
     glutSwapBuffers();
@@ -224,38 +230,38 @@ void inicializaP(struct point *p, int x, int y,double f){
 	p->accX=0;
 	p->accY=0;
 	p->cont=0;
-	p->pinned = false;
-	p->blink[0]=false;
-	p->blink[1]=false;
-	p->blink[2]=false;
-	p->blink[3]=false;
+	p->pinned = GL_FALSE;
+	p->blink[0]=GL_FALSE;
+	p->blink[1]=GL_FALSE;
+	p->blink[2]=GL_FALSE;
+	p->blink[3]=GL_FALSE;
 }
 void inicializaL(struct link *l, struct point *p1a, struct point *p2a,int uid){
 	l->id=uid;
 	l->p1=p1a;
 	l->p1->lin[l->p1->cont]=l;
-	l->p1->blink[l->p1->cont]=true;
+	l->p1->blink[l->p1->cont]=GL_TRUE;
 	l->p1->cont++;
 	l->p2=p2a;
 	l->p2->lin[l->p2->cont]=l;
-	l->p2->blink[l->p2->cont]=true;
+	l->p2->blink[l->p2->cont]=GL_TRUE;
 	l->p2->cont++;
 	l->restingDistance=RESTINGD;
 	l->stiffness=STIFFNESS;
 	l->tearSensitivity=CURTAINSEN;
-	l->roto=true;
+	l->roto=GL_TRUE;
 }
 void inicializador(){
 	int i,j,ix,jx;
 	for(i=0,ix=mayaX;i<mayaX;i++,ix-=2){
 		for(j=0,jx=mayaY;j<mayaY;j++,jx-=2){
 			if(j==mayaX-1){
-				inicializaP(&points[i][j], ix, jx,0.001);	
+				inicializaP(&points[i][j], ix, jx,0.0001);	
 			} else {
 				inicializaP(&points[i][j], ix, jx,0);
 			}
 			if(j==0){
-				points[i][j].pinned=true;
+				points[i][j].pinned=GL_TRUE;
 				points[i][j].pinX=ix;
 				points[i][j].pinY=jx;
 			}
