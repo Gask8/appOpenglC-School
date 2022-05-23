@@ -11,18 +11,28 @@
 //Variables de links
 #define RESTINGD 2
 #define STIFFNESS 0.08
-#define CURTAINSEN 10
+#define CURTAINSEN 50
+//Varibale de los Sticks
+#define bodyPoints 11
+#define bodyLinks 10
+#define nBodies 10
 const int sizeN = size*-1;
 const int numLin = mayaX*(mayaX-1)+mayaY*(mayaY-1);
+const int numLinB = bodyLinks*nBodies;
 using namespace std;
 
 void ajusta(int, int);
 void teclado(unsigned char, int, int);
+void raton(int, int);
 void inicializaP(struct point *p, int, int, double);
 void inicializaL(struct link *l, struct point *p1, struct point *p2);
+void transformacion(double *, int, int);
+double distPointToSegmentSquared(double, double, double, double, double, double);
 void inicializador();
 void dibujaPuntos();
 void dibujaMaya();
+void dibujaPuntosBodies();
+void dibujaBodies();
 
 //STRUCTS
 struct point{
@@ -31,11 +41,11 @@ struct point{
 	double last[2];
 	double accX, accY;
 	double fX;
-	GLboolean pinned;
+	bool pinned;
   	float pinX, pinY;
 	//Lista de links
 	struct link *lin[4];
-	GLboolean blink[4];
+	bool blink[4];
 	int cont;
 };
 struct link{
@@ -45,12 +55,22 @@ struct link{
 	float restingDistance;
   	float stiffness;
   	float tearSensitivity;
-  	GLboolean roto;
+  	bool roto;
 };
+//STRUCT STICKS
+
+
 
 double h= 0.025; // h incrementos de tiempo
 GLboolean bx=GL_FALSE;
 GLboolean by=GL_TRUE;
+GLboolean modo=GL_TRUE;
+
+// every PointMass within this many pixels will be influenced by the cursor
+float mouseInfluenceSize = 2; 
+// minimum distance for tearing when user is right clicking
+float mouseTearSize = 4;
+float mouseInfluenceScalar = 0.01;
 
 struct point points[mayaX][mayaY];
 struct link links[numLin];
@@ -67,15 +87,9 @@ void fuerzaCuerda(struct link *l){
     	int i;
     	for (i=0; i < l->p1->cont; i++) {
 			if(l->p1->lin[i]->id==l->id){
-				l->p1->blink[i]=GL_FALSE;
+				l->p1->blink[i]=false;
 			}
 		}
-		for (i=0; i < l->p2->cont; i++) {
-			if(l->p2->lin[i]->id==l->id){
-				l->p2->blink[i]=GL_FALSE;
-			}
-		}
-		l->roto=GL_FALSE;
 	}
 
     double im1 = 1 / MASA;
@@ -147,7 +161,7 @@ void dibuja(void){
 	
     glPointSize(2);
     glColor3ub(0,0,0);
-    dibujaPuntos();
+//    dibujaPuntos();
     dibujaMaya();
     
     glutSwapBuffers();
@@ -174,6 +188,7 @@ int main(int argc, char** argv){
 	glutDisplayFunc(dibuja);
 	glutReshapeFunc(ajusta);
 	glutKeyboardFunc(teclado);
+	glutMotionFunc(raton);
 	glutIdleFunc(anima);
 	//Iniciar todas las variables
 	inicializador();
@@ -193,8 +208,95 @@ void teclado(unsigned char key, int x, int y) {
 	case 27: exit(0);
 	case 'x': bx = !bx ;break;
 	case 'y': by = !by; break;
+	case 'm': modo=!modo; break;
+	case 'r': inicializador(); break;		
 	}
 }
+void raton(int x, int y){
+    
+    int c=0;
+    
+    double mouseAjustado = mouseInfluenceSize * mouseInfluenceSize;
+  	double mouseRotura = mouseTearSize * mouseTearSize;
+
+	double res[2]={0,0};
+	
+	transformacion(res,x,500-y);
+//	printf("X normal: %d\n",x);
+//	printf("Y normal: %d\n",y);
+//	printf("X res: %f\n",res[0]);
+//	printf("Y res: %f\n",res[1]);
+    for(c=0;c<numLin;c++){
+    	double distanceSquared = distPointToSegmentSquared(links[c].p1->pos[0],links[c].p1->pos[1],links[c].p2->pos[0],links[c].p2->pos[1],res[0]-50,res[1]-50);
+		if(modo){ //primer modo es mover la malla
+			if(distanceSquared < mouseAjustado){
+				links[c].p1->last[0] = links[c].p1->pos[0] - (res[0]-50)*mouseInfluenceScalar;
+				links[c].p2->last[0] = links[c].p2->pos[0] - (res[0]-50)*mouseInfluenceScalar;
+				links[c].p1->last[1] = links[c].p1->pos[1] - (res[1]-50)*mouseInfluenceScalar;
+				links[c].p2->last[1] = links[c].p2->pos[1] - (res[1]-50)*mouseInfluenceScalar;
+			}
+		} else{ //segundo modo es romper la malla
+			if(distanceSquared < mouseRotura){
+				links[c].roto = false;
+			    	int i;
+			    	for (i=0; i < links[c].p1->cont; i++) {
+						if(links[c].p1->lin[i]->id==links[c].id){
+							links[c].p1->blink[i]=false;
+						}
+					}
+					for (i=0; i < links[c].p2->cont; i++) {
+						if(links[c].p2->lin[i]->id==links[c].id){
+							links[c].p2->blink[i]=false;
+						}
+					}
+
+			}
+			
+		}
+		
+	}   
+	glutPostRedisplay();
+}
+void transformacion(double *resultado, int x, int y){
+	//Matriz de proyección ortogonal
+	float matrizP[2][2] = {0.2,0,0,0.2};
+	float vector[2] = {x,y};
+	
+	float suma = 0.0;
+	
+	int i,j;
+	
+	for (i = 0; i < 2; i++) {
+        suma = 0;
+        for (j = 0; j < 2; j++) {
+            suma += matrizP[i][j] * vector[j];
+        }   
+        resultado[i] = suma;
+    }
+}
+
+double distPointToSegmentSquared(double lineX1, double lineY1, double lineX2, double lineY2, double pointX, double pointY) {
+  double vx = lineX1 - pointX;
+  double vy = lineY1 - pointY;
+  double ux = lineX2 - lineX1;
+  double uy = lineY2 - lineY1;
+  
+  double length = ux*ux + uy*uy;
+  double det = (-vx * ux) + (-vy * uy);
+  
+  if ((det < 0) || (det > length)) {
+    ux = lineX2 - pointX;
+    uy = lineY2 - pointY;
+    if((vx*vx+vy*vy) > (ux*ux+uy*uy)){
+    	return (ux*ux+uy*uy);
+	} else{
+		return (vx*vx+vy*vy);
+	} 
+  }
+  det = ux*vy - uy*vx;
+  return (det*det) / length;
+}
+
 //Funciones para dibuja ===============================
 void dibujaPuntos(){
     glBegin(GL_POINTS);
@@ -230,40 +332,38 @@ void inicializaP(struct point *p, int x, int y,double f){
 	p->accX=0;
 	p->accY=0;
 	p->cont=0;
-	p->pinned = GL_FALSE;
-	p->blink[0]=GL_FALSE;
-	p->blink[1]=GL_FALSE;
-	p->blink[2]=GL_FALSE;
-	p->blink[3]=GL_FALSE;
+	p->pinned = false;
+	p->blink[0]=false;
+	p->blink[1]=false;
+	p->blink[2]=false;
+	p->blink[3]=false;
 }
 void inicializaL(struct link *l, struct point *p1a, struct point *p2a,int uid){
 	l->id=uid;
 	l->p1=p1a;
 	l->p1->lin[l->p1->cont]=l;
-	l->p1->blink[l->p1->cont]=GL_TRUE;
+	l->p1->blink[l->p1->cont]=true;
 	l->p1->cont++;
 	l->p2=p2a;
 	l->p2->lin[l->p2->cont]=l;
-	l->p2->blink[l->p2->cont]=GL_TRUE;
+	l->p2->blink[l->p2->cont]=true;
 	l->p2->cont++;
 	l->restingDistance=RESTINGD;
 	l->stiffness=STIFFNESS;
 	l->tearSensitivity=CURTAINSEN;
-	l->roto=GL_TRUE;
+	l->roto=true;
 }
 void inicializador(){
 	int i,j,ix,jx;
 	for(i=0,ix=mayaX;i<mayaX;i++,ix-=2){
 		for(j=0,jx=mayaY;j<mayaY;j++,jx-=2){
 			if(j==mayaX-1){
-				inicializaP(&points[i][j], ix, jx,0.0001);	
-			} else if(j==mayaX-8){
-				inicializaP(&points[i][j], ix, jx,-0.0001);	
+				inicializaP(&points[i][j], ix, jx,0.001);	
 			} else {
 				inicializaP(&points[i][j], ix, jx,0);
 			}
 			if(j==0){
-				points[i][j].pinned=GL_TRUE;
+				points[i][j].pinned=true;
 				points[i][j].pinX=ix;
 				points[i][j].pinY=jx;
 			}
@@ -284,4 +384,3 @@ void inicializador(){
 		}
 	}
 }
-
